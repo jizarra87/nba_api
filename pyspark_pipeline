@@ -1,0 +1,36 @@
+from pyspark.sql import SparkSession
+import pandas as pd
+from nba_api.stats.static import teams
+
+# Initialize Spark Session
+spark = SparkSession.builder \
+    .appName("NBA_Data_Pipeline") \
+    .getOrCreate()
+
+#Function to fetch teams data
+def fect_nba_teams():
+    nba_teams = teams.get_teams()
+    teams_df = pd.DataFrame(nba_teams)
+    return teams_df
+
+# Function to load data to a data lake or database
+def load_data_to_csv(dataframe, output_path):
+    # Convert Pandas DataFrame to Spark DataFrame
+    spark_df = spark.createDataFrame(dataframe)
+    # Write to CSV
+    spark_df.coalesce(1).write.mode("overwrite").option("header", "true").csv(output_path)
+
+# Main pipeline function
+def nba_data_pipeline():
+    # Extract
+    raw_data = fect_nba_teams()
+      
+    # Load
+    output_path = "/home/ji/nba_lake"
+    load_data_to_csv(raw_data, output_path)
+    print(f"Data successfully written to {output_path}")
+
+
+
+if __name__ == "__main__":
+    nba_data_pipeline()
