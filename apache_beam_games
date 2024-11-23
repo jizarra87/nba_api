@@ -1,0 +1,46 @@
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOptions, StandardOptions
+#from google.cloud import bigquery
+from nba_api.stats.static import teams
+from nba_api.stats.endpoints import leaguegamefinder
+import pandas as pd
+pipeline_options = PipelineOptions()
+
+
+def get_id(dictionary):
+    return dictionary['id']
+
+def get_games(id):
+    dataframes = []
+    for i in id:
+        gamefinder = leaguegamefinder.LeagueGameFinder(team_id_nullable=i)
+        games = gamefinder.get_data_frames()[0]  # Get the DataFrame for this team
+        dataframes.append(games)  # Append the DataFrame to the list
+
+    # Concatenate all DataFrames into a single DataFrame
+    final_df = pd.concat(dataframes, ignore_index=True)
+    final_df = final_df.dropna()
+    return final_df
+
+    # Function to format a dictionary as a CSV row
+def format_as_csv(df):
+    x = ''
+    for _, row in df.iterrows():
+        x += (", ".join(map(str, row.values))) +'\n'   
+    return x
+header = 'SEASON_ID,TEAM_ID,TEAM_ABBREVIATION,TEAM_NAME,GAME_ID,GAME_DATE,MATCHUP,WL,MIN,PTS,FGM,FGA,FG_PCT,FG3M,FG3A,FG3_PCT,FTM,FTA,FT_PCT,OREB,DREB,REB,AST,STL,BLK,TOV,PF,PLUS_MINUS'
+
+with beam.Pipeline(options=pipeline_options) as p:
+    (
+        p
+        | "Fetch NBA Teams" >> beam.Create(teams.get_teams())
+        | 'Get id' >> beam.Map(get_id)
+        | 'Create the list' >> beam.combiners.ToList()
+        | 'Get Games' >> beam.Map(get_games)
+        | 'format CSV' >> beam.Map(format_as_csv)
+        | "Write to file" >> beam.io.WriteToText(
+            'output/games',
+            file_name_suffix = '.csv',
+            header = header
+        )
+    )
