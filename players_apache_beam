@@ -1,0 +1,47 @@
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+from nba_api.stats.static import teams, players 
+from nba_api.stats.endpoints import leaguegamefinder, playergamelog, playerindex
+import pandas as pd
+pipeline_options = PipelineOptions()
+
+
+def get_players():
+    dataframes = []
+    for j in range(16, 25, 1):
+        season = '20'+str(j)+'-'+str(j+1)
+        player_index = playerindex.PlayerIndex(league_id= "00",season= season)
+        player_index_df = player_index.get_data_frames()[0]
+        dataframes.append(player_index_df)
+    # Concatenate all DataFrames into a single DataFrame
+    final_df = pd.concat(dataframes, ignore_index=True)
+    return final_df
+
+
+df = get_players()
+
+df_dict = df.to_dict(orient='records')
+
+header = ",".join(df.columns)
+header = 'PERSON_ID,PLAYER_LAST_NAME,PLAYER_FIRST_NAME,PLAYER_SLUG,TEAM_ID,TEAM_SLUG,IS_DEFUNCT,TEAM_CITY,TEAM_NAME,TEAM_ABBREVIATION,JERSEY_NUMBER,POSITION,HEIGHT,WEIGHT,COLLEGE,COUNTRY,DRAFT_YEAR,DRAFT_ROUND,DRAFT_NUMBER,ROSTER_STATUS,FROM_YEAR,TO_YEAR,PTS,REB,AST,STATS_TIMEFRAME'
+
+def format_csv(dict_):
+    x = ''
+    for d in df_dict:
+        for j in d.values():
+            x = x + ", "+ str(j)
+        x += '\n'
+    return x
+
+with beam.Pipeline(options=pipeline_options) as p:
+    (
+        p
+        |"Fetch Players" >> beam.Create(df_dict)
+        |"Format CSV">> beam.Map(format_csv)
+        #|"Output" >> beam.Map(print)
+        | "Write to file" >> beam.io.WriteToText(
+            'output/players',
+            file_name_suffix = '.csv',
+            header = header
+        )
+    )
